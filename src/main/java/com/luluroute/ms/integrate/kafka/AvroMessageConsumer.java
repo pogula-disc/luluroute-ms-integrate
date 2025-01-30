@@ -1,10 +1,10 @@
 package com.luluroute.ms.integrate.kafka;
 
 import com.logistics.luluroute.avro.artifact.message.ShipmentArtifact;
-import com.lululemon.wms.integration.common.exception.PermanentException;
-import com.lululemon.wms.integration.common.exception.TransientException;
-import com.lululemon.wms.integration.common.kafka.AbstractTopicConsumer;
-import com.lululemon.wms.integration.common.kafka.EventHeaders;
+import com.lululemon.luluroute.common.exception.PermanentException;
+import com.lululemon.luluroute.common.exception.TransientException;
+import com.lululemon.luluroute.common.kafka.AbstractTopicConsumer;
+import com.lululemon.luluroute.common.kafka.EventHeaders;
 import com.luluroute.ms.integrate.config.AppConfig;
 import com.luluroute.ms.integrate.service.ShipmentIntegrateService;
 import com.luluroute.ms.integrate.util.ObjectMapperUtil;
@@ -17,7 +17,6 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.handler.annotation.Headers;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import static com.luluroute.ms.integrate.util.Constants.*;
@@ -46,9 +45,7 @@ public class AvroMessageConsumer extends AbstractTopicConsumer<ShipmentArtifact>
 	private MessageFilter messageFilter;
 
 	public AvroMessageConsumer(AppConfig appConfig) {
-		super(appConfig.getShipmentArtifactInputChannel(),
-				appConfig.getShipmentArtifactRetryChannel(),
-				appConfig.getShipmentArtifactDlqChannel());
+		super(appConfig.getShipmentArtifactInputChannel());
 	}
 
 	/**
@@ -68,29 +65,6 @@ public class AvroMessageConsumer extends AbstractTopicConsumer<ShipmentArtifact>
 		else{
 			ack.acknowledge();
 		}
-	}
-
-	/**
-	 * Thread 2 - Retry Topic Consumer
-	 *
-	 * @param shipmentArtifact - Message Payload
-	 * @param headers - Headers as a Map
-	 * @param ack     - Manually control offset commit
-	 */
-	@Override
-//	@KafkaListener(id = "${config.shipment.artifact.retry.topic}", topics = "${config.shipment.artifact.retry.topic}", groupId = "${config.shipment.artifact.consumerGroup}")
-	public void consumeMessageRetry(@Payload ShipmentArtifact shipmentArtifact, @Headers MessageHeaders headers,
-									Acknowledgment ack) {
-//		super.consumeMessageRetry(shipmentArtifact, headers, ack);
-	}
-
-	/**
-	 * Thread 3 - Check if it is time to resume any topic consumers
-	 */
-	@Override
-	@Scheduled(fixedDelayString = "${config.error.processing.scheduler.rate}")
-	public void checkForResume() {
-		super.checkForResume();
 	}
 
 	@Override

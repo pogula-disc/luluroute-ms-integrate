@@ -10,7 +10,8 @@ public enum OrderTypes {
     SPECIAL,
     TRUNK,
     ECOMM,
-    STRAT;
+    STRAT,
+    COMM;
 
     public static boolean isRetailOrder(String orderType) {
         List<String> retailOrderTypeList = Arrays.asList(ALLOC.name(), REPLEN.name(), SPECIAL.name(), TRUNK.name());
@@ -22,7 +23,8 @@ public enum OrderTypes {
     }
 
     public static boolean isStratOrder(String orderType) {
-        return STRAT.name().equalsIgnoreCase(orderType);
-    }
+		List<String> stratOrderTypeList = Arrays.asList(STRAT.name(), COMM.name());
+		return stratOrderTypeList.stream().anyMatch(orderType::equalsIgnoreCase);
+	}
 
 }

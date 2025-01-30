@@ -1,5 +1,17 @@
 package com.luluroute.ms.integrate.processor;
 
+import static com.luluroute.ms.integrate.util.Constants.PROCESS_EXCEPTION_DETAIL;
+import static com.luluroute.ms.integrate.util.Constants.RESPONSE_MESSAGE_FAILURE;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.util.CollectionUtils;
+
 import com.logistics.luluroute.domain.Shipment.Carrier.CarrierInfo;
 import com.logistics.luluroute.domain.Shipment.Message.MessageBodyInfo;
 import com.logistics.luluroute.domain.Shipment.Message.MessageHeaderInfo;
@@ -13,35 +25,24 @@ import com.logistics.luluroute.domain.Shipment.Shared.ItemInfo;
 import com.logistics.luluroute.domain.Shipment.Shared.RateShopResponse;
 import com.logistics.luluroute.domain.Shipment.Shared.ResponseItem;
 import com.logistics.luluroute.domain.Shipment.Shared.StatusItem;
-import com.logistics.luluroute.domain.artifact.message.*;
+import com.logistics.luluroute.domain.artifact.message.ProcessException;
+import com.logistics.luluroute.domain.artifact.message.Rate;
+import com.logistics.luluroute.domain.artifact.message.RateShop;
+import com.logistics.luluroute.domain.artifact.message.RouteRules;
+import com.logistics.luluroute.domain.artifact.message.RuleResult;
+import com.logistics.luluroute.domain.artifact.message.RulesError;
+import com.logistics.luluroute.domain.artifact.message.ShipmentArtifact;
+import com.logistics.luluroute.domain.artifact.message.TransitTimeInfo;
 import com.logistics.luluroute.validator.ValidationUtil;
-import com.luluroute.ms.integrate.config.AppConfig;
-import com.luluroute.ms.integrate.util.Constants;
+import com.luluroute.ms.integrate.util.CarrierUtil;
+
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
-import org.apache.commons.lang3.ObjectUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.CollectionUtils;
-
-import javax.annotation.PostConstruct;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
-
-import static com.luluroute.ms.integrate.util.Constants.PROCESS_EXCEPTION_DETAIL;
-import static com.luluroute.ms.integrate.util.Constants.RESPONSE_MESSAGE_FAILURE;
-
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
+@Slf4j
 public class ShipmentMessageResponseBuilder {
 
-    private static String CANADAPOST_CARRIER_CODE;
-
-    @PostConstruct
-    public void init() {
-        CANADAPOST_CARRIER_CODE = appConfig.getCanadaPostCarrierCode();
-    }
 
     public static ShipmentMessage buildCreateShipmentSuccess(ShipmentMessage shipmentRequest, ShipmentArtifact shipmentArtifact) {
 
@@ -51,7 +52,6 @@ public class ShipmentMessageResponseBuilder {
         String RESPONSE_MESSAGE_SUCCESS = "Success";
         String carrierCode = shipmentArtifact.getArtifactBody().getCarrierExternalData().getCarrierCode();
         long date = Instant.now().getEpochSecond();
-
         RequestInfo.RequestInfoBuilder requestInfoBuilder = RequestInfo.builder();
         requestInfoBuilder
                 .requestType(String.valueOf(CREATE_SHIPMENT_SUCCESS_REQUEST_TYPE))
@@ -80,8 +80,9 @@ public class ShipmentMessageResponseBuilder {
 
         TransitInfo transitDetails = shipmentsRequest.getTransitDetails();
         transitDetails.getLabelDetails().setLabel(shipmentArtifact.getArtifactBody().getLabelInfo().getContentRendered());
+
         //ITLO-8782 :sending the Format as PDF for Canadapost in the ms-service response
-        if(carrierCode!=null && carrierCode.equalsIgnoreCase(CANADAPOST_CARRIER_CODE)) {
+        if(carrierCode!=null && carrierCode.equalsIgnoreCase(CarrierUtil.CANADA_POST_CARRIER_CODE)) {
             transitDetails.getLabelDetails().setFormat(shipmentArtifact.getArtifactBody().getLabelInfo().getFormatFromCarrier());
         }
         transitDetails.setShipmentId(shipmentArtifact.getArtifactBody().getCarrierExternalData().getShipmentId());
@@ -139,8 +140,8 @@ public class ShipmentMessageResponseBuilder {
 			if (null != shipmentsRequest.getOrderDetails().getBillingDetails()) {
 				shipmentsRequest.getOrderDetails().getBillingDetails().setBillTo(referenceAccounts.get(0));
 			} else {
-				shipmentsRequest.getOrderDetails()
-						.setBillingDetails(BillingInfo.builder().billToAccount(referenceAccounts.get(0)).build());
+				shipmentsRequest.getOrderDetails().setBillingDetails(BillingInfo.builder()
+						.billTo(referenceAccounts.get(0)).billToAccount(referenceAccounts.get(0)).build());
 			}
 		}
 	}
@@ -151,6 +152,8 @@ public class ShipmentMessageResponseBuilder {
      */
     private static int calculateBusinessTransitDays(ShipmentArtifact shipmentArtifact) {
         TransitTimeInfo shipmentDatesInfo = shipmentArtifact.getArtifactBody().getCarrierExternalData().getTransitTimeInfo();
+        String carrierCode = shipmentArtifact.getArtifactBody().getCarrierExternalData().getCarrierCode();
+        log.info("Calculating transit days for carrier: {}", carrierCode);
         return (int) ChronoUnit.DAYS.between(
                 Instant.ofEpochSecond(shipmentDatesInfo.getShippedDate()),
                 Instant.ofEpochSecond(shipmentDatesInfo.getPlannedDeliveryDate()))

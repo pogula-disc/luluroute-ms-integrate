@@ -19,8 +19,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import java.util.List;
+
+
 
 import static com.luluroute.ms.integrate.util.Constants.*;
 
@@ -33,6 +38,9 @@ public class ShipmentIntegrateService {
 
     @Autowired
     private RedisCacheLoader redisCacheLoader;
+    
+    @Value("${config.psd.calculation}")
+    private List<String> pstDcs;
 
     @Async("AsyncTaskExecutor")
     public void processArtifactMessageExecutor(ShipmentArtifact shipmentArtifact) {
@@ -40,7 +48,7 @@ public class ShipmentIntegrateService {
         try {
             processArtifactMessage(shipmentArtifact);
         } catch (Exception e) {
-            log.error(STANDARD_ERROR, msg, ExceptionUtils.getStackTrace(e));
+            log.error(STANDARD_ERROR, msg, e);
             throw e;
         }
     }
@@ -117,9 +125,19 @@ public class ShipmentIntegrateService {
 
                 log.info(String.format(STANDARD_FIELD_INFO, "CutOffHH", assignedTransitModes.getCutOffHH()));
                 log.info(String.format(STANDARD_FIELD_INFO, "CutOffMM", assignedTransitModes.getCutOffMM()));
-
-                long updatedCutOffHH  = Long.parseLong(assignedTransitModes.getCutOffHH()) + (DateUtil.offsetBetweenTimezone(entityProfile.getTimezone()) / 60);
-                long updatedCutOffMM  = Long.parseLong(assignedTransitModes.getCutOffMM()) + (DateUtil.offsetBetweenTimezone(entityProfile.getTimezone()) % 60);
+                log.info(String.format(STANDARD_FIELD_INFO, "DC s configured PST", pstDcs));
+                //If request comes from MA Active we need to send in UTC and for others we need to send as PST
+                long updatedCutOffHH  = 0;
+                long updatedCutOffMM  = 0;
+				if (pstDcs.contains(shipmentInfo.getShipmentHeader().getOrigin().getEntityCode())) {
+					updatedCutOffHH = Long.parseLong(assignedTransitModes.getCutOffHH());
+					updatedCutOffMM = Long.parseLong(assignedTransitModes.getCutOffMM());
+				} else {
+					updatedCutOffHH = Long.parseLong(assignedTransitModes.getCutOffHH())
+							+ (DateUtil.offsetBetweenTimezone(entityProfile.getTimezone()) / 60);
+					updatedCutOffMM = Long.parseLong(assignedTransitModes.getCutOffMM())
+							+ (DateUtil.offsetBetweenTimezone(entityProfile.getTimezone()) % 60);
+				}
 
                 toUpdateTransitDetails.getDateDetails().setCutOffTimeHH(updatedCutOffHH % 24);
                 toUpdateTransitDetails.getDateDetails().setCutOffTimeMM(updatedCutOffMM % 60);
@@ -133,7 +151,7 @@ public class ShipmentIntegrateService {
 
             }
         } catch (Exception e){
-            log.error( STANDARD_ERROR,msg, ExceptionUtils.getStackTrace(e));
+            log.error( STANDARD_ERROR,msg, e);
         }
     }
 
@@ -148,9 +166,10 @@ public class ShipmentIntegrateService {
         String msg = "ShipmentIntegrateService.getAssignedTransitModes()";
         for (AssignedTransitModes assignedTransitModes : entityProfile.getAssignedTransitModes()) {
             if (carrierCode.equalsIgnoreCase(assignedTransitModes.getCarrierCode()) && carrierModeCode.equalsIgnoreCase(assignedTransitModes.getModeCode())) {
-                if (isRetailAssignedTransitMode(orderType, assignedTransitModes.getRef1())) {
-                    return assignedTransitModes;
-                } else if (isNonRetailAssignedTransitMode(orderType, assignedTransitModes.getRef1())) {
+				if (isRetailAssignedTransitMode(orderType, assignedTransitModes.getRef1())
+						|| isStratAssignedTransitMode(orderType, assignedTransitModes.getRef1())) {
+					return assignedTransitModes;
+				} else if (isNonRetailAssignedTransitMode(orderType, assignedTransitModes.getRef1())) {
                     return assignedTransitModes;
                 }
             }
@@ -179,4 +198,15 @@ public class ShipmentIntegrateService {
         return !OrderTypes.isRetailOrder(shipmentOrderType)
                 && StringUtils.isEmpty(transitModeOrderType);
     }
+    
+    
+    /**
+	 * @param shipmentOrderType    Shipment Message Order Type
+	 * @param transitModeOrderType Current Assigned Transit Mode Order Type
+	 * @return true if Shipment Message is STRAT , COMM or B2B,
+	 */
+	private boolean isStratAssignedTransitMode(String shipmentOrderType, String transitModeOrderType) {
+		return OrderTypes.isStratOrder(shipmentOrderType) && !StringUtils.isEmpty(transitModeOrderType)
+				&& transitModeOrderType.equalsIgnoreCase(shipmentOrderType);
+	}
 }
